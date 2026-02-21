@@ -1,0 +1,64 @@
+{#- name: "iterator" -#}
+{% macro iterator(type) -%}
+    struct iterator {
+        {{ type }}* _c;
+        size_type _i;
+
+        bool operator==(iterator const& other) const { return _i == other._i; }
+        bool operator!=(iterator const& other) const { return _i != other._i; }
+        bool operator<(iterator const& other) const { return _i < other._i; }
+
+        difference_type operator-(iterator const& other) const {
+            return difference_type(_i) - difference_type(other._i);
+        }
+
+        iterator operator+(difference_type i) const { return {_c, _i + i}; }
+        iterator operator-(difference_type i) const { return {_c, _i - i}; }
+
+        iterator& operator++() { ++_i; return *this; }
+        iterator& operator--() { --_i; return *this; }
+
+        reference operator*() const { return {_c, _i}; }
+    };
+{%- endmacro %}
+
+{% macro const_iterator(type) -%}
+    struct const_iterator {
+        const {{ type }}* _c;
+        size_type _i;
+
+        bool operator==(const_iterator const& other) const { return _i == other._i; }
+        bool operator!=(const_iterator const& other) const { return _i != other._i; }
+        bool operator<(const_iterator const& other) const { return _i < other._i; }
+
+        difference_type operator-(const_iterator const& other) const {
+            return difference_type(_i) - difference_type(other._i);
+        }
+
+        const_iterator operator+(difference_type i) const { return {_c, _i + i}; }
+        const_iterator operator-(difference_type i) const { return {_c, _i - i}; }
+
+        const_iterator& operator++() { ++_i; return *this; }
+        const_iterator& operator--() { --_i; return *this; }
+
+        const_reference operator*() const { return {_c, _i}; }
+    };
+{%- endmacro %}
+
+{% macro begin_end() -%}
+    [[nodiscard]] iterator begin() {
+        return {this, 0};
+    }
+
+    [[nodiscard]] const_iterator begin() const {
+        return {this, 0};
+    }
+
+    [[nodiscard]] iterator end() {
+        return {this, size()};
+    }
+
+    [[nodiscard]] const_iterator end() const {
+        return {this, size()};
+    }
+{%- endmacro %}

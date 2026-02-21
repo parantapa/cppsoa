@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cppsoa"
+version = "0.0.1"
+authors = [
+  { name="Parantapa Bhattacharya", email="pb+pypi@parantapa.net" },
+]
+description = "PB's miscellaneous command line tools."
+readme = "README.rst"
+requires-python = ">=3.13"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "click",
+    "json5",
+    "pydantic",
+    "jinja2",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/parantapa/cppsoa"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+cppsoa = "cppsoa.cli:cli"

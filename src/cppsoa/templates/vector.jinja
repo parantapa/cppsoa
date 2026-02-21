@@ -1,0 +1,88 @@
+{#- name: "vector" -#}
+{% import 'iterator:iterator' as iterator %}
+
+struct {{ type }} {
+    using size_type = std::size_t;
+    using difference_type = std::ptrdiff_t;
+
+    {% for col in cols %}
+    std::vector<{{ col.type }}> {{ col.name }};
+    {% endfor %}
+
+    struct reference {
+        {{ type }}* _c;
+        size_type _i;
+
+        {% for col in cols %}
+        {{ col.type }}& {{ col.name }}() {
+            return _c->{{ col.name }}[_i];
+        }
+        {% endfor %}
+
+        {% for col in cols %}
+        const {{ col.type }}& {{ col.name }}() const {
+            return _c->{{ col.name }}[_i];
+        }
+        {% endfor %}
+    };
+
+    struct const_reference {
+        const {{ type }}* _c;
+        size_type _i;
+
+        {% for col in cols %}
+        const {{ col.type }}& {{ col.name }}() const {
+            return _c->{{ col.name }}[_i];
+        }
+        {% endfor %}
+    };
+
+    {{ iterator.iterator(type) }}
+
+    {{ iterator.const_iterator(type) }}
+
+    void clear() {
+        {% for col in cols %}
+        {{ col.name }}.clear();
+        {% endfor %}
+    }
+
+    void reserve(size_type new_cap) {
+        {% for col in cols %}
+        {{ col.name }}.reserve(new_cap);
+        {% endfor %}
+    }
+
+    void shrink_to_fit() {
+        {% for col in cols %}
+        {{ col.name }}.shrink_to_fit();
+        {% endfor %}
+    }
+
+    {% set comma = joiner(", ") %}
+    void push_back({% for col in cols %}{{ comma() }}const {{ col.type }}& {{ col.name }}{% endfor %}) {
+        {% for col in cols %}
+        this->{{ col.name }}.push_back({{ col.name }});
+        {% endfor %}
+    }
+
+    void resize(size_type count) {
+        {% for col in cols %}
+        {{ col.name }}.resize(count);
+        {% endfor %}
+    }
+
+    [[nodiscard]] reference operator[](size_type i) {
+        return {this, i};
+    }
+
+    [[nodiscard]] const_reference operator[](size_type i) const {
+        return {this, i};
+    }
+
+    [[nodiscard]] size_type size() const {
+        return {{ cols[0].name }}.size();
+    }
+
+    {{ iterator.begin_end() }}
+};
