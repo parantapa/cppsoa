@@ -13,7 +13,12 @@ DataColumns = dict[str, str]
 
 class DataStructures(BaseModel):
     namespace: str
+    headers: list[str]
     vector: dict[str, DataColumns]
+
+    def add_header(self, header: str):
+        if header not in self.headers:
+            self.headers.append(header)
 
 
 @dataclass
@@ -50,9 +55,11 @@ def cli(input_file: str, output_file: str):
         fobj.write("// This code is auto generated.\n")
         fobj.write("// Do not edit manually.\n\n")
 
-        fobj.write("#include <cstdint>\n")
         if input.vector:
-            fobj.write("#include <vector>\n")
+            input.add_header("vector")
+
+        for header in input.headers:
+            fobj.write(f"#include <{header}>\n")
         fobj.write("\n")
 
         namespace = input.namespace
