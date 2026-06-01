@@ -1,0 +1,241 @@
+{#- name: "csv_reader" -#}
+class {{ reader_type }} {
+  public:
+    static constexpr std::int32_t default_block_size = 128 * 1 << 20;
+
+    {{ reader_type }}() = delete;
+
+    explicit {{ reader_type }}(const std::string& fname, bool use_threads = false,
+                                   std::int32_t block_size = default_block_size)
+        : file_name(fname)
+        , input_file{}
+        , reader{} {
+        auto io_context = arrow::io::default_io_context();
+        auto memory_pool = arrow::default_memory_pool();
+
+        {
+            auto result = arrow::io::ReadableFile::Open(file_name, memory_pool);
+            if (!result.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to open file: {}: {}", file_name, result.status().ToString()));
+            }
+            input_file = result.MoveValueUnsafe();
+        }
+
+        auto read_options = arrow::csv::ReadOptions::Defaults();
+        auto parse_options = arrow::csv::ParseOptions::Defaults();
+        auto convert_options = arrow::csv::ConvertOptions::Defaults();
+
+        read_options.use_threads = use_threads;
+        read_options.block_size = block_size;
+
+        convert_options.null_values = {};
+        convert_options.strings_can_be_null = false;
+        convert_options.quoted_strings_can_be_null = false;
+
+        convert_options.include_columns = {
+            {% set comma = joiner(", ") %}
+            {% for col in cols %}
+            {{ comma() }} "{{ col.name }}"
+            {% endfor %}
+        };
+        convert_options.column_types = {
+            {% set comma = joiner(", ") %}
+            {% for col in cols %}
+            {{ comma() }} { "{{ col.name }}", {{ col.type | arrow_type }} }
+            {% endfor %}
+        };
+
+        {
+            auto result =
+                arrow::csv::StreamingReader::Make(io_context, input_file, read_options, parse_options, convert_options);
+            if (!result.ok()) [[unlikely]] {
+                throw std::runtime_error(fmt::format("Arrow error: failed to create streaming reader: {}: {}",
+                                                     file_name, result.status().ToString()));
+            }
+            reader = result.MoveValueUnsafe();
+        }
+    }
+
+    {{ reader_type }}({{ reader_type }}&) = delete;
+    {{ reader_type }}({{ reader_type }}&&) = delete;
+
+    {{ reader_type }}& operator=({{ reader_type }}&) = delete;
+    {{ reader_type }}& operator=({{ reader_type }}&&) = delete;
+
+    [[nodiscard]] bool read_batch({{ table_type }}& table) {
+        std::shared_ptr<arrow::RecordBatch> batch{};
+        {
+            arrow::Status status = reader->ReadNext(&batch);
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to read batch: {}: {}", file_name, status.ToString()));
+            }
+        }
+
+        if (!batch) {
+            return false;
+        }
+
+        const std::size_t num_rows = batch->num_rows();
+        table.reserve(table.size() + num_rows);
+
+        {% for col in cols %}
+        auto {{ col.name }}_array = std::dynamic_pointer_cast<{{ col.type | arrow_array_type }}>(batch->GetColumnByName("{{ col.name }}"));
+        if ({{ col.name }}_array->null_count() > 0) [[unlikely]] {
+            throw std::runtime_error(fmt::format("Column '{{ col.name }}' in file '{}' contains null values", file_name));
+        }
+        auto {{ col.name }}_values = {{ col.name }}_array->raw_values();
+
+        {% endfor %}
+
+        {% for col in cols %}
+        table.{{ col.name }}.insert(table.{{ col.name }}.end(), {{ col.name }}_values, {{ col.name }}_values + num_rows);
+        {% endfor %}
+
+        return true;
+    }
+
+    void close() {
+        {
+            auto status = reader->Close();
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to close reader: {}: {}", file_name, status.ToString()));
+            }
+        }
+
+        {
+            auto status = input_file->Close();
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to close input file: {}: {}", file_name, status.ToString()));
+            }
+        }
+    }
+
+  private:
+    std::string file_name{};
+    std::shared_ptr<arrow::io::ReadableFile> input_file{};
+    std::shared_ptr<arrow::csv::StreamingReader> reader{};
+};
+
+
+{#- name: "csv_writer" -#}
+class {{ writer_type }} {
+  public:
+    static constexpr std::int32_t default_batch_size = 1 << 20;
+
+    {{ writer_type }}() = delete;
+
+    {{ writer_type }}(const std::string& fname, std::int32_t batch_size = default_batch_size)
+        : file_name(fname)
+        , schema{}
+        , output_file{}
+        , writer{} {
+        schema = arrow::schema({
+            {% set comma = joiner(", ") %}
+            {% for col in cols %}
+            {{ comma() }} arrow::field("{{ col.name }}", {{ col.type | arrow_type }})
+            {% endfor %}
+        });
+
+        auto write_options = arrow::csv::WriteOptions::Defaults();
+        write_options.include_header = true;
+        write_options.batch_size = batch_size;
+
+        {
+            auto result = arrow::io::FileOutputStream::Open(file_name);
+            if (!result.ok()) [[unlikely]] {
+                throw std::runtime_error(fmt::format("Arrow error: failed to open file: {}: {}", file_name,
+                                                     result.status().ToString()));
+            }
+            output_file = result.MoveValueUnsafe();
+        }
+
+        {
+            auto result = arrow::csv::MakeCSVWriter(output_file, schema, write_options);
+            if (!result.ok()) [[unlikely]] {
+                throw std::runtime_error(fmt::format("Arrow error: failed to create writer: {}: {}",
+                                                     file_name, result.status().ToString()));
+            }
+            writer = result.MoveValueUnsafe();
+        }
+    }
+
+    {{ writer_type }}({{ writer_type }}&) = delete;
+    {{ writer_type }}({{ writer_type }}&&) = delete;
+
+    {{ writer_type }}& operator=({{ writer_type }}&) = delete;
+    {{ writer_type }}& operator=({{ writer_type }}&&) = delete;
+
+    [[nodiscard]] std::shared_ptr<arrow::RecordBatch> build_batch(const {{ table_type }}& table) {
+        {% for col in cols %}
+        {{ col.type | arrow_builder_type }} {{ col.name }}_builder{};
+        {
+            auto status = {{ col.name }}_builder.Reserve(table.size());
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to reserve builder memory for '{{ col.name }}' {}: {}", file_name, status.ToString()));
+            }
+        }
+        {{ col.name }}_builder.AppendValues(table.{{ col.name }});
+
+        {% endfor %}
+
+        {% for col in cols %}
+        std::shared_ptr<arrow::Array> {{ col.name }}_array{};
+        {
+            auto status = {{ col.name }}_builder.Finish(&{{ col.name }}_array);
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to finish builder for '{{ col.name }}' {}: {}", file_name, status.ToString()));
+            }
+        }
+
+        {% endfor %}
+
+        return arrow::RecordBatch::Make(
+            schema,
+            table.size(),
+            {
+                {% set comma = joiner(", ") %}
+                {% for col in cols %}
+                {{ comma() }} {{ col.name }}_array
+                {% endfor %}
+            }
+        );
+    }
+
+    void write_batch(std::shared_ptr<arrow::RecordBatch>& batch) {
+        auto status = writer->WriteRecordBatch(*batch);
+        if (!status.ok()) [[unlikely]] {
+            throw std::runtime_error(
+                fmt::format("Arrow error: failed to write batch {}: {}", file_name, status.ToString()));
+        }
+    }
+
+    void close() {
+        {
+            auto status = writer->Close();
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to close writer: {}: {}", file_name, status.ToString()));
+            }
+        }
+
+        {
+            auto status = output_file->Close();
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to close output file: {}: {}", file_name, status.ToString()));
+            }
+        }
+    }
+
+  private:
+    std::string file_name{};
+    std::shared_ptr<arrow::Schema> schema{};
+    std::shared_ptr<arrow::io::FileOutputStream> output_file{};
+    std::shared_ptr<arrow::ipc::RecordBatchWriter> writer{};
+};

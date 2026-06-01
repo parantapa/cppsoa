@@ -6,12 +6,18 @@ struct {{ type }} {
     using difference_type = std::ptrdiff_t;
 
     {% for col in cols %}
-    std::vector<{{ col.type }}> {{ col.name }};
+    std::vector<{{ col.type }}> {{ col.name }}{};
     {% endfor %}
 
+    struct value_type {
+        {% for col in cols %}
+        {{ col.type }} {{ col.name }}{};
+        {% endfor %}
+    };
+
     struct reference {
-        {{ type }}* _c;
-        size_type _i;
+        {{ type }}* _c{nullptr};
+        size_type _i{0};
 
         {% for col in cols %}
         {{ col.type }}& {{ col.name }}() {
@@ -24,17 +30,42 @@ struct {{ type }} {
             return _c->{{ col.name }}[_i];
         }
         {% endfor %}
+
+        operator value_type() const {
+            {% set comma = joiner(", ") %}
+            return {
+                {% for col in cols %}
+                {{ comma() }} _c->{{ col.name }}[_i]
+                {% endfor %}
+            };
+        }
+
+        reference& operator=(const value_type& value) {
+            {% for col in cols %}
+            _c->{{ col.name }}[_i] = value.{{ col.name }};
+            {% endfor %}
+            return *this;
+        }
     };
 
     struct const_reference {
-        const {{ type }}* _c;
-        size_type _i;
+        const {{ type }}* _c{nullptr};
+        size_type _i{0};
 
         {% for col in cols %}
         const {{ col.type }}& {{ col.name }}() const {
             return _c->{{ col.name }}[_i];
         }
         {% endfor %}
+
+        operator value_type() const {
+            {% set comma = joiner(", ") %}
+            return {
+                {% for col in cols %}
+                {{ comma() }} _c->{{ col.name }}[_i]
+                {% endfor %}
+            };
+        }
     };
 
     {{ iterator.iterator(type) }}
@@ -63,6 +94,12 @@ struct {{ type }} {
     void push_back({% for col in cols %}{{ comma() }}const {{ col.type }}& {{ col.name }}{% endfor %}) {
         {% for col in cols %}
         this->{{ col.name }}.push_back({{ col.name }});
+        {% endfor %}
+    }
+
+    void push_back(const value_type& value) {
+        {% for col in cols %}
+        this->{{ col.name }}.push_back(value.{{ col.name }});
         {% endfor %}
     }
 

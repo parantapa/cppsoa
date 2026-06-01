@@ -1,0 +1,24 @@
+{
+    namespace: "smn",
+    headers: ["cstdint"],
+    vector: {
+        LocationStatTable: {
+            location_id: "std::int64_t",
+            location_type: "std::int8_t",
+            num_rows: "std::int32_t",
+            max_occupancy: "std::int32_t",
+            max_possible_edges: "std::int32_t",
+            conn_prob: "double",
+            edge_count_mean: "double",
+            edge_count_var: "double",
+        },
+        EdgeTable: {
+            pid1: "std::int64_t",
+            pid2: "std::int64_t",
+            day_number: "std::int32_t",
+            lid: "std::int64_t",
+            slid: "std::int64_t",
+            slid: "std::int64_t",
+        }
+    }
+}

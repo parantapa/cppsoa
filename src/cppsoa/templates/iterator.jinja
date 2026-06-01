@@ -1,8 +1,8 @@
 {#- name: "iterator" -#}
 {% macro iterator(type) -%}
     struct iterator {
-        {{ type }}* _c;
-        size_type _i;
+        {{ type }}* _c{nullptr};
+        size_type _i{0};
 
         bool operator==(iterator const& other) const { return _i == other._i; }
         bool operator!=(iterator const& other) const { return _i != other._i; }
@@ -24,8 +24,8 @@
 
 {% macro const_iterator(type) -%}
     struct const_iterator {
-        const {{ type }}* _c;
-        size_type _i;
+        const {{ type }}* _c{nullptr};
+        size_type _i{0};
 
         bool operator==(const_iterator const& other) const { return _i == other._i; }
         bool operator!=(const_iterator const& other) const { return _i != other._i; }
