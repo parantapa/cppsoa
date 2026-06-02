@@ -8,7 +8,7 @@ version = "0.0.1"
 authors = [
   { name="Parantapa Bhattacharya", email="pb+pypi@parantapa.net" },
 ]
-description = "PB's miscellaneous command line tools."
+description = "PB's C++ code generation tool."
 readme = "README.rst"
 requires-python = ">=3.13"
 classifiers = [

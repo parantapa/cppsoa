@@ -86,48 +86,63 @@ def load_template(name: str) -> tuple[str, str, None] | None:
     return None
 
 
+def cpp_type(type: str) -> str:
+    return {
+        "i8": "std::int8_t",
+        "i16": "std::int16_t",
+        "i32": "std::int32_t",
+        "i64": "std::int64_t",
+        "u8": "std::uint8_t",
+        "u16": "std::uint16_t",
+        "u32": "std::uint32_t",
+        "u64": "std::uint64_t",
+        "f32": "float",
+        "f64": "double",
+    }[type]
+
+
 def arrow_type(type: str) -> str:
     return {
-        "std::int8_t": "arrow::int8()",
-        "std::int16_t": "arrow::int16()",
-        "std::int32_t": "arrow::int32()",
-        "std::int64_t": "arrow::int64()",
-        "std::uint8_t": "arrow::uint8()",
-        "std::uint16_t": "arrow::uint16()",
-        "std::uint32_t": "arrow::uint32()",
-        "std::uint64_t": "arrow::uint64()",
-        "float": "arrow::float32()",
-        "double": "arrow::float64()",
+        "i8": "arrow::int8()",
+        "i16": "arrow::int16()",
+        "i32": "arrow::int32()",
+        "i64": "arrow::int64()",
+        "u8": "arrow::uint8()",
+        "u16": "arrow::uint16()",
+        "u32": "arrow::uint32()",
+        "u64": "arrow::uint64()",
+        "f32": "arrow::float32()",
+        "f64": "arrow::float64()",
     }[type]
 
 
 def arrow_array_type(type: str) -> str:
     return {
-        "std::int8_t": "arrow::Int8Array",
-        "std::int16_t": "arrow::Int16Array",
-        "std::int32_t": "arrow::Int32Array",
-        "std::int64_t": "arrow::Int64Array",
-        "std::uint8_t": "arrow::UInt8Array",
-        "std::uint16_t": "arrow::UInt16Array",
-        "std::uint32_t": "arrow::UInt32Array",
-        "std::uint64_t": "arrow::UInt64Array",
-        "float": "arrow::FloatArray",
-        "double": "arrow::DoubleArray",
+        "i8": "arrow::Int8Array",
+        "i16": "arrow::Int16Array",
+        "i32": "arrow::Int32Array",
+        "i64": "arrow::Int64Array",
+        "u8": "arrow::UInt8Array",
+        "u16": "arrow::UInt16Array",
+        "u32": "arrow::UInt32Array",
+        "u64": "arrow::UInt64Array",
+        "f32": "arrow::FloatArray",
+        "f64": "arrow::DoubleArray",
     }[type]
 
 
 def arrow_builder_type(type: str) -> str:
     return {
-        "std::int8_t": "arrow::Int8Builder",
-        "std::int16_t": "arrow::Int16Builder",
-        "std::int32_t": "arrow::Int32Builder",
-        "std::int64_t": "arrow::Int64Builder",
-        "std::uint8_t": "arrow::UInt8Builder",
-        "std::uint16_t": "arrow::UInt16Builder",
-        "std::uint32_t": "arrow::UInt32Builder",
-        "std::uint64_t": "arrow::UInt64Builder",
-        "float": "arrow::FloatBuilder",
-        "double": "arrow::DoubleBuilder",
+        "i8": "arrow::Int8Builder",
+        "i16": "arrow::Int16Builder",
+        "i32": "arrow::Int32Builder",
+        "i64": "arrow::Int64Builder",
+        "u8": "arrow::UInt8Builder",
+        "u16": "arrow::UInt16Builder",
+        "u32": "arrow::UInt32Builder",
+        "u64": "arrow::UInt64Builder",
+        "f32": "arrow::FloatBuilder",
+        "f64": "arrow::DoubleBuilder",
     }[type]
 
 
@@ -137,6 +152,7 @@ _ENVIRONMENT = jinja2.Environment(
     undefined=jinja2.StrictUndefined,
     loader=jinja2.FunctionLoader(load_template),
 )
+_ENVIRONMENT.filters["cpp_type"] = cpp_type
 _ENVIRONMENT.filters["arrow_type"] = arrow_type
 _ENVIRONMENT.filters["arrow_array_type"] = arrow_array_type
 _ENVIRONMENT.filters["arrow_builder_type"] = arrow_builder_type

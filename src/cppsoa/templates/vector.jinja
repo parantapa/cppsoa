@@ -1,47 +1,46 @@
 {#- name: "vector" -#}
-{% import 'iterator:iterator' as iterator %}
 
-struct {{ type }} {
+struct {{ table.name }} {
     using size_type = std::size_t;
     using difference_type = std::ptrdiff_t;
 
-    {% for col in cols %}
-    std::vector<{{ col.type }}> {{ col.name }}{};
+    {% for col in table.columns %}
+    std::vector<{{ col.type | cpp_type }}> {{ col.name }}{};
     {% endfor %}
 
-    struct value_type {
-        {% for col in cols %}
-        {{ col.type }} {{ col.name }}{};
+    struct Row {
+        {% for col in table.columns %}
+        {{ col.type | cpp_type }} {{ col.name }}{};
         {% endfor %}
     };
 
     struct reference {
-        {{ type }}* _c{nullptr};
+        {{ table.name }}* _c{nullptr};
         size_type _i{0};
 
-        {% for col in cols %}
-        {{ col.type }}& {{ col.name }}() {
+        {% for col in table.columns %}
+        {{ col.type | cpp_type }}& {{ col.name }}() {
             return _c->{{ col.name }}[_i];
         }
         {% endfor %}
 
-        {% for col in cols %}
-        const {{ col.type }}& {{ col.name }}() const {
+        {% for col in table.columns %}
+        const {{ col.type | cpp_type }}& {{ col.name }}() const {
             return _c->{{ col.name }}[_i];
         }
         {% endfor %}
 
-        operator value_type() const {
+        operator Row() const {
             {% set comma = joiner(", ") %}
             return {
-                {% for col in cols %}
+                {% for col in table.columns %}
                 {{ comma() }} _c->{{ col.name }}[_i]
                 {% endfor %}
             };
         }
 
-        reference& operator=(const value_type& value) {
-            {% for col in cols %}
+        reference& operator=(const Row& value) {
+            {% for col in table.columns %}
             _c->{{ col.name }}[_i] = value.{{ col.name }};
             {% endfor %}
             return *this;
@@ -49,65 +48,190 @@ struct {{ type }} {
     };
 
     struct const_reference {
-        const {{ type }}* _c{nullptr};
+        const {{ table.name }}* _c{nullptr};
         size_type _i{0};
 
-        {% for col in cols %}
-        const {{ col.type }}& {{ col.name }}() const {
+        {% for col in table.columns %}
+        const {{ col.type | cpp_type }}& {{ col.name }}() const {
             return _c->{{ col.name }}[_i];
         }
         {% endfor %}
 
-        operator value_type() const {
+        operator Row() const {
             {% set comma = joiner(", ") %}
             return {
-                {% for col in cols %}
+                {% for col in table.columns %}
                 {{ comma() }} _c->{{ col.name }}[_i]
                 {% endfor %}
             };
         }
     };
 
-    {{ iterator.iterator(type) }}
-
-    {{ iterator.const_iterator(type) }}
-
     void clear() {
-        {% for col in cols %}
+        {% for col in table.columns %}
         {{ col.name }}.clear();
         {% endfor %}
     }
 
     void reserve(size_type new_cap) {
-        {% for col in cols %}
+        {% for col in table.columns %}
         {{ col.name }}.reserve(new_cap);
         {% endfor %}
     }
 
     void shrink_to_fit() {
-        {% for col in cols %}
+        {% for col in table.columns %}
         {{ col.name }}.shrink_to_fit();
         {% endfor %}
     }
 
     {% set comma = joiner(", ") %}
-    void push_back({% for col in cols %}{{ comma() }}const {{ col.type }}& {{ col.name }}{% endfor %}) {
-        {% for col in cols %}
+    void push_back(
+            {% for col in table.columns %}
+            {{ comma() }}const {{ col.type | cpp_type }}& {{ col.name }}
+            {% endfor %}) {
+        {% for col in table.columns %}
         this->{{ col.name }}.push_back({{ col.name }});
         {% endfor %}
     }
 
-    void push_back(const value_type& value) {
-        {% for col in cols %}
+    void push_back(const Row& value) {
+        {% for col in table.columns %}
         this->{{ col.name }}.push_back(value.{{ col.name }});
         {% endfor %}
     }
 
     void resize(size_type count) {
-        {% for col in cols %}
+        {% for col in table.columns %}
         {{ col.name }}.resize(count);
         {% endfor %}
     }
+
+    template <typename Functor>
+    void for_each(Functor&& fn) {
+        for (size_type _i = 0; _i < size(); _i++) {
+            fn(reference{this, _i});
+        }
+    }
+
+    template <typename Functor>
+    void for_each(Functor&& fn) const {
+        for (size_type _i = 0; _i < size(); _i++) {
+            fn(const_reference{this, _i});
+        }
+    }
+
+    {% if table.with_par_for_each %}
+    template <typename Functor>
+    void par_for_each(tf::Executor& executor, Functor&& fn) {
+        tf::Taskflow taskflow;
+        tf::IndexRange<size_type> _range(0, size(), 1);
+        taskflow.for_each_by_index(
+            _range,
+            [&](tf::IndexRange<size_type> _subrange) {
+                auto _worker_id = executor.this_worker_id();
+                for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                    fn(_worker_id, reference{this, _i});
+                }
+            }
+        );
+        executor.run(taskflow).wait();
+    }
+
+    template <typename Functor>
+    void par_for_each(tf::Executor& executor, Functor&& fn) const {
+        tf::Taskflow taskflow;
+        tf::IndexRange<size_type> _range(0, size(), 1);
+        taskflow.for_each_by_index(
+            _range,
+            [&](tf::IndexRange<size_type> _subrange) {
+                auto _worker_id = executor.this_worker_id();
+                for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                    fn(_worker_id, const_reference{this, _i});
+                }
+            }
+        );
+        executor.run(taskflow).wait();
+    }
+    {% endif %}
+
+    {% if table.with_sort %}
+    template <typename Compare>
+    void sort(Compare&& compare) {
+        std::vector<size_type> _indexes(size());
+        for (size_type _i = 0; _i < size(); _i++) {
+            _indexes[_i] = _i;
+        }
+
+        std::sort(
+            _indexes.begin(), _indexes.end(),
+            [&](size_type _i, size_type _j) {
+                return compare(reference{this, _i}, reference{this, _j});
+            }
+        );
+
+        {% for col in table.columns %}
+        {
+            std::vector<{{ col.type | cpp_type }}> {{ col.name }}_new(size());
+            for (size_type _i = 0; _i < size(); _i++) {
+                {{ col.name }}_new[_i] = {{ col.name }}[_indexes[_i]];
+            }
+            {{ col.name }} = std::move({{ col.name }}_new);
+        }
+
+        {% endfor %}
+    }
+    {% endif %}
+
+    {% if table.with_par_sort %}
+    template <typename Compare>
+    void par_sort(tf::Executor& executor, Compare&& compare) {
+        std::vector<size_type> _indexes(size());
+        tf::IndexRange<size_type> _range(0, size(), 1);
+
+        {
+            tf::Taskflow taskflow;
+            taskflow.for_each_by_index(
+                _range,
+                [&](tf::IndexRange<size_type> _subrange) {
+                    for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                        _indexes[_i] = _i;
+                    }
+                }
+            );
+            executor.run(taskflow).wait();
+        }
+
+        {
+            tf::Taskflow taskflow;
+            taskflow.sort(
+                _indexes.begin(), _indexes.end(),
+                [&](size_type _i, size_type _j) {
+                    return compare(reference{this, _i}, reference{this, _j});
+                }
+            );
+            executor.run(taskflow).wait();
+        }
+
+        {% for col in table.columns %}
+        {
+            tf::Taskflow taskflow;
+            std::vector<{{ col.type | cpp_type }}> {{ col.name }}_new(size());
+            taskflow.for_each_by_index(
+                _range,
+                [&](tf::IndexRange<size_type> _subrange) {
+                    for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                        {{ col.name }}_new[_i] = {{ col.name }}[_indexes[_i]];
+                    }
+                }
+            );
+            executor.run(taskflow).wait();
+            {{ col.name }} = std::move({{ col.name }}_new);
+        }
+
+        {% endfor %}
+    }
+    {% endif %}
 
     [[nodiscard]] reference operator[](size_type i) {
         return {this, i};
@@ -118,8 +242,6 @@ struct {{ type }} {
     }
 
     [[nodiscard]] size_type size() const {
-        return {{ cols[0].name }}.size();
+        return {{ table.columns[0].name }}.size();
     }
-
-    {{ iterator.begin_end() }}
 };

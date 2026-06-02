@@ -35,13 +35,13 @@ class {{ reader_type }} {
 
         convert_options.include_columns = {
             {% set comma = joiner(", ") %}
-            {% for col in cols %}
+            {% for col in table.columns %}
             {{ comma() }} "{{ col.name }}"
             {% endfor %}
         };
         convert_options.column_types = {
             {% set comma = joiner(", ") %}
-            {% for col in cols %}
+            {% for col in table.columns %}
             {{ comma() }} { "{{ col.name }}", {{ col.type | arrow_type }} }
             {% endfor %}
         };
@@ -63,7 +63,7 @@ class {{ reader_type }} {
     {{ reader_type }}& operator=({{ reader_type }}&) = delete;
     {{ reader_type }}& operator=({{ reader_type }}&&) = delete;
 
-    [[nodiscard]] bool read_batch({{ table_type }}& table) {
+    [[nodiscard]] bool read_batch({{ table.name }}& table) {
         std::shared_ptr<arrow::RecordBatch> batch{};
         {
             arrow::Status status = reader->ReadNext(&batch);
@@ -80,7 +80,7 @@ class {{ reader_type }} {
         const std::size_t num_rows = batch->num_rows();
         table.reserve(table.size() + num_rows);
 
-        {% for col in cols %}
+        {% for col in table.columns %}
         auto {{ col.name }}_array = std::dynamic_pointer_cast<{{ col.type | arrow_array_type }}>(batch->GetColumnByName("{{ col.name }}"));
         if ({{ col.name }}_array->null_count() > 0) [[unlikely]] {
             throw std::runtime_error(fmt::format("Column '{{ col.name }}' in file '{}' contains null values", file_name));
@@ -89,7 +89,7 @@ class {{ reader_type }} {
 
         {% endfor %}
 
-        {% for col in cols %}
+        {% for col in table.columns %}
         table.{{ col.name }}.insert(table.{{ col.name }}.end(), {{ col.name }}_values, {{ col.name }}_values + num_rows);
         {% endfor %}
 
@@ -135,7 +135,7 @@ class {{ writer_type }} {
         , writer{} {
         schema = arrow::schema({
             {% set comma = joiner(", ") %}
-            {% for col in cols %}
+            {% for col in table.columns %}
             {{ comma() }} arrow::field("{{ col.name }}", {{ col.type | arrow_type }})
             {% endfor %}
         });
@@ -169,8 +169,8 @@ class {{ writer_type }} {
     {{ writer_type }}& operator=({{ writer_type }}&) = delete;
     {{ writer_type }}& operator=({{ writer_type }}&&) = delete;
 
-    [[nodiscard]] std::shared_ptr<arrow::RecordBatch> build_batch(const {{ table_type }}& table) {
-        {% for col in cols %}
+    [[nodiscard]] std::shared_ptr<arrow::RecordBatch> build_batch(const {{ table.name }}& table) {
+        {% for col in table.columns %}
         {{ col.type | arrow_builder_type }} {{ col.name }}_builder{};
         {
             auto status = {{ col.name }}_builder.Reserve(table.size());
@@ -183,7 +183,7 @@ class {{ writer_type }} {
 
         {% endfor %}
 
-        {% for col in cols %}
+        {% for col in table.columns %}
         std::shared_ptr<arrow::Array> {{ col.name }}_array{};
         {
             auto status = {{ col.name }}_builder.Finish(&{{ col.name }}_array);
@@ -200,7 +200,7 @@ class {{ writer_type }} {
             table.size(),
             {
                 {% set comma = joiner(", ") %}
-                {% for col in cols %}
+                {% for col in table.columns %}
                 {{ comma() }} {{ col.name }}_array
                 {% endfor %}
             }
