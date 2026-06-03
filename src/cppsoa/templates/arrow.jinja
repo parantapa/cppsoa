@@ -179,7 +179,13 @@ class {{ writer_type }} {
                     fmt::format("Arrow error: failed to reserve builder memory for '{{ col.name }}' {}: {}", file_name, status.ToString()));
             }
         }
-        {{ col.name }}_builder.AppendValues(table.{{ col.name }});
+        {
+            auto status = {{ col.name }}_builder.AppendValues(table.{{ col.name }});
+            if (!status.ok()) [[unlikely]] {
+                throw std::runtime_error(
+                    fmt::format("Arrow error: failed to append values for '{{ col.name }}' {}: {}", file_name, status.ToString()));
+            }
+        }
 
         {% endfor %}
 

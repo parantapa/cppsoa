@@ -1,0 +1,20 @@
+{
+    namespace: "test",
+    tables: [
+        {
+            name: "ActivityTable",
+            columns: [
+                { name: "pid", type: "u64" },
+                { name: "lid", type: "u64" },
+                { name: "start_time", type: "i64" },
+                { name: "duration", type: "i32" },
+                { name: "activity_type", type: "i16" },
+            ],
+            column_type: "vector",
+            csv_reader_type: "ActivityTableCsvReader",
+            csv_writer_type: "ActivityTableCsvWriter",
+            with_sort: true,
+            with_par_sort: true
+        }
+    ]
+}

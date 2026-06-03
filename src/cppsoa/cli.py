@@ -94,6 +94,7 @@ def cli(input_file: str, output_file: str):
 
         if table.with_par_sort:
             add_header("taskflow/taskflow.hpp")
+            add_header("taskflow/algorithm/for_each.hpp")
             add_header("taskflow/algorithm/sort.hpp")
 
         if table.csv_reader_type:
