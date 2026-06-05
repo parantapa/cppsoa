@@ -193,6 +193,7 @@ struct ActivityTable {
     template <typename Compare>
     void sort(Compare&& compare) {
         std::vector<size_type> _indexes(size());
+
         for (size_type _i = 0; _i < size(); _i++) {
             _indexes[_i] = _i;
         }
@@ -248,37 +249,32 @@ struct ActivityTable {
 
     template <typename Compare>
     void par_sort(tf::Executor& executor, Compare&& compare) {
-        std::vector<size_type> _indexes(size());
+        tf::Taskflow taskflow{};
         tf::IndexRange<size_type> _range(0, size(), 1);
 
-        {
-            tf::Taskflow taskflow;
-            taskflow.for_each_by_index(
-                _range,
-                [&](tf::IndexRange<size_type> _subrange) {
-                    for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
-                        _indexes[_i] = _i;
-                    }
-                }
-            );
-            executor.run(taskflow).wait();
-        }
+        std::vector<size_type> _indexes(size());
 
-        {
-            tf::Taskflow taskflow;
-            taskflow.sort(
-                _indexes.begin(), _indexes.end(),
-                [&](size_type _i, size_type _j) {
-                    return compare(reference{this, _i}, reference{this, _j});
+        tf::Task build_index = taskflow.for_each_by_index(
+            _range,
+            [&](tf::IndexRange<size_type> _subrange) {
+                for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                    _indexes[_i] = _i;
                 }
-            );
-            executor.run(taskflow).wait();
-        }
+            }
+        );
 
-        {
-            tf::Taskflow taskflow;
+        tf::Task sort_index = taskflow.sort(
+            _indexes.begin(), _indexes.end(),
+            [&](size_type _i, size_type _j) {
+                return compare(reference{this, _i}, reference{this, _j});
+            }
+        );
+        sort_index.succeed(build_index);
+
+        tf::Task update_pid = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<std::uint64_t> pid_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -286,14 +282,15 @@ struct ActivityTable {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             pid = std::move(pid_new);
-        }
+        });
+        update_pid.succeed(sort_index);
 
-        {
-            tf::Taskflow taskflow;
+        tf::Task update_lid = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<std::uint64_t> lid_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -301,14 +298,15 @@ struct ActivityTable {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             lid = std::move(lid_new);
-        }
+        });
+        update_lid.succeed(sort_index);
 
-        {
-            tf::Taskflow taskflow;
+        tf::Task update_start_time = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<std::int64_t> start_time_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -316,14 +314,15 @@ struct ActivityTable {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             start_time = std::move(start_time_new);
-        }
+        });
+        update_start_time.succeed(sort_index);
 
-        {
-            tf::Taskflow taskflow;
+        tf::Task update_duration = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<std::int32_t> duration_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -331,14 +330,15 @@ struct ActivityTable {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             duration = std::move(duration_new);
-        }
+        });
+        update_duration.succeed(sort_index);
 
-        {
-            tf::Taskflow taskflow;
+        tf::Task update_activity_type = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<std::int16_t> activity_type_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -346,10 +346,13 @@ struct ActivityTable {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             activity_type = std::move(activity_type_new);
-        }
+        });
+        update_activity_type.succeed(sort_index);
 
+
+        executor.run(taskflow).wait();
     }
 
     [[nodiscard]] reference operator[](size_type i) {

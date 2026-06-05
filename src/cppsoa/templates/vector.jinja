@@ -124,7 +124,7 @@ struct {{ table.name }} {
     {% if table.with_par_for_each %}
     template <typename Functor>
     void par_for_each(tf::Executor& executor, Functor&& fn) {
-        tf::Taskflow taskflow;
+        tf::Taskflow taskflow{};
         tf::IndexRange<size_type> _range(0, size(), 1);
         taskflow.for_each_by_index(
             _range,
@@ -140,7 +140,7 @@ struct {{ table.name }} {
 
     template <typename Functor>
     void par_for_each(tf::Executor& executor, Functor&& fn) const {
-        tf::Taskflow taskflow;
+        tf::Taskflow taskflow{};
         tf::IndexRange<size_type> _range(0, size(), 1);
         taskflow.for_each_by_index(
             _range,
@@ -159,6 +159,7 @@ struct {{ table.name }} {
     template <typename Compare>
     void sort(Compare&& compare) {
         std::vector<size_type> _indexes(size());
+
         for (size_type _i = 0; _i < size(); _i++) {
             _indexes[_i] = _i;
         }
@@ -186,38 +187,33 @@ struct {{ table.name }} {
     {% if table.with_par_sort %}
     template <typename Compare>
     void par_sort(tf::Executor& executor, Compare&& compare) {
-        std::vector<size_type> _indexes(size());
+        tf::Taskflow taskflow{};
         tf::IndexRange<size_type> _range(0, size(), 1);
 
-        {
-            tf::Taskflow taskflow;
-            taskflow.for_each_by_index(
-                _range,
-                [&](tf::IndexRange<size_type> _subrange) {
-                    for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
-                        _indexes[_i] = _i;
-                    }
-                }
-            );
-            executor.run(taskflow).wait();
-        }
+        std::vector<size_type> _indexes(size());
 
-        {
-            tf::Taskflow taskflow;
-            taskflow.sort(
-                _indexes.begin(), _indexes.end(),
-                [&](size_type _i, size_type _j) {
-                    return compare(reference{this, _i}, reference{this, _j});
+        tf::Task build_index = taskflow.for_each_by_index(
+            _range,
+            [&](tf::IndexRange<size_type> _subrange) {
+                for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
+                    _indexes[_i] = _i;
                 }
-            );
-            executor.run(taskflow).wait();
-        }
+            }
+        );
+
+        tf::Task sort_index = taskflow.sort(
+            _indexes.begin(), _indexes.end(),
+            [&](size_type _i, size_type _j) {
+                return compare(reference{this, _i}, reference{this, _j});
+            }
+        );
+        sort_index.succeed(build_index);
 
         {% for col in table.columns %}
-        {
-            tf::Taskflow taskflow;
+        tf::Task update_{{ col.name }} = taskflow.emplace([&]{
+            tf::Taskflow subflow{};
             std::vector<{{ col.type | cpp_type }}> {{ col.name }}_new(size());
-            taskflow.for_each_by_index(
+            subflow.for_each_by_index(
                 _range,
                 [&](tf::IndexRange<size_type> _subrange) {
                     for (size_type _i = _subrange.begin(); _i < _subrange.end(); _i += _subrange.step_size()) {
@@ -225,11 +221,14 @@ struct {{ table.name }} {
                     }
                 }
             );
-            executor.run(taskflow).wait();
+            executor.corun(subflow);
             {{ col.name }} = std::move({{ col.name }}_new);
-        }
+        });
+        update_{{ col.name }}.succeed(sort_index);
 
         {% endfor %}
+
+        executor.run(taskflow).wait();
     }
     {% endif %}
 
